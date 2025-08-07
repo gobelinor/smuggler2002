@@ -1,3 +1,6 @@
+
+<img width="833" height="401" alt="Capture d’écran 2025-08-07 à 14 14 24" src="https://github.com/user-attachments/assets/54dd4e4a-3bdb-4968-aa08-e3f0740650c5" />
+
 ### PORTSWIGGER LABS TEST
 
 ✅ HTTP request smuggling, confirming a CL.TE vulnerability via differential responses
