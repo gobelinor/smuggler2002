@@ -49,6 +49,7 @@
 —> detects TE.TE but no exploit implemented
 
 ### TODO
-ajouter un TE0
-ajouter un scrapper de endpoint interessant pour CL0
-ajouter un la possibilité d’ajouter un header comme proxyconnection: gougougaga
+Add TE0
+Add an interesting endpoint scraper for CL0
+Add the ability to add a header like proxyconnection: gouguagaga
+Add new versions of advanced vulnerabilities presented by portswigger in august 2025
