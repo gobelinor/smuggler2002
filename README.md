@@ -11,7 +11,7 @@
 —> detects CL.TE but no exploit implemented
 
 ✅ Exploiting HTTP request smuggling to bypass front-end security controls, TE.CL vulnerability
-—> detects TE.CL but no exploit implemented —> EZ exploit osef
+—> detects TE.CL but no exploit implemented 
 
 ✅ Exploiting HTTP request smuggling to reveal front-end request rewriting
 —> detects CL.TE but no exploit implemented
@@ -23,23 +23,19 @@
 —> detects CL.TE but no exploit implemented
 
 ⚠️ Response queue poisoning via H2.TE request smuggling
-—> host not dumb
 -> NOT IMPLEMENTED
 
 ⚠️ H2.CL request smuggling
-—> host not dumb
 -> NOT IMPLEMENTED
 
 ⚠️ HTTP/2 request smuggling via CRLF injection
-—> host not dumb
 -> NOT IMPLEMENTED
 
 ⚠️ HTTP/2 request splitting via CRLF injection
-—> host not dumb
 -> NOT IMPLEMENTED
 
 ✅ CL.0 request smuggling
-—> fonctionne avec le bon endpoint de renseigné
+-> detects CL.0 if good enpoint is given in args
 
 ✅ HTTP request smuggling, basic CL.TE vulnerability
 
