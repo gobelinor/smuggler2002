@@ -45,10 +45,21 @@
 —> detects TE.TE but no exploit implemented
 
 ### TODO
+
+Add a flag to decide if we want the attack in the attack requests to be send in the same connection or separate ones.
+
+Add a flag to spam test requests during 30s
+
+Add a flag to test with all methods
+
+Add HTTP2 support
+
 Add TE0
 
 Add an interesting endpoint scraper for CL0
 
-Add the ability to add a header like proxyconnection: gouguagaga
+Add the ability to add a header like `proxyconnection: gouguagaga`
 
 Add new versions of advanced vulnerabilities presented by portswigger in august 2025
+
+ 
