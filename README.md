@@ -1,3 +1,7 @@
+# HTTP REQUEST SMUGGLING VULNERABILITY SCANNER
+
+Work in progress tool to detect HTTP REQUEST SMUGGLING vulnerabilities.
+It is based on the work of [PortSwigger](https://portswigger.net/web-security/request-smuggling) and [James Kettle](https://twitter.com/jameskettle).
 
 <img width="833" height="401" alt="Capture d’écran 2025-08-07 à 14 14 24" src="https://github.com/user-attachments/assets/54dd4e4a-3bdb-4968-aa08-e3f0740650c5" />
 
