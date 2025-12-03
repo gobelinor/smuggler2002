@@ -9,7 +9,6 @@ import signal
 import contextlib
 import re
 
-
 BLUE, RED, GREEN, RESET = '\033[94m', '\033[91m', '\033[92m', '\033[0m'
 DEFAULT_METHOD = "POST"
 DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
