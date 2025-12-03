@@ -8,14 +8,7 @@ from tqdm import tqdm
 import signal
 import contextlib
 import re
-from requests.auth import HTTPBasicAuth
-from dotenv import load_dotenv
 
-load_dotenv()  
-
-NTFY_ENDPOINT = os.getenv("NTFY_ENDPOINT", "https://localhost/NOTIFICATIONS")
-NTFY_USER = os.getenv("NTFY_USER")
-NTFY_PASS = os.getenv("NTFY_PASS")
 
 BLUE, RED, GREEN, RESET = '\033[94m', '\033[91m', '\033[92m', '\033[0m'
 DEFAULT_METHOD = "POST"
@@ -70,13 +63,13 @@ def trace(host, user_agent):
     r = requests.request("TRACE", f"https://{host}", headers=headers)
     r2 = requests.get(f"https://{host}", headers=headers)
     if r.status_code == 200 and r2.text != r.text and "X_test" in r.text:
-        print_ntfy_and_save_to_file(f"{RED}[!]{RESET} TRACE is enabled on the host {host}")
-        print_ntfy_and_save_to_file(f"{RED}[!]{RESET} TRACE response: \n"+r.text)
+        print_and_save_to_file(f"{RED}[!]{RESET} TRACE is enabled on the host {host}")
+        print_and_save_to_file(f"{RED}[!]{RESET} TRACE response: \n"+r.text)
     else:
-        print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} TRACE is disabled on the host -", r.status_code)
+        print_and_save_to_file(f"{GREEN}[+]{RESET} TRACE is disabled on the host -", r.status_code)
     r3 = requests.request("FOO", f"https://{host}", headers=headers)
     if r3.text == r2.text:
-        print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Be careful, the host treats unknown methods as GET")
+        print_and_save_to_file(f"{GREEN}[+]{RESET} Be careful, the host treats unknown methods as GET")
 
 # Sanity check to see if host is up and behaving normally
 def sanity_check(host):
@@ -86,23 +79,23 @@ def sanity_check(host):
         try:
             r = requests.get("https://" + host, timeout=1)
             if r.status_code in range(200, 299):
-                print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is up and behaving normally - {r.status_code}")
+                print_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is up and behaving normally - {r.status_code}")
                 return True
             elif r.status_code == 404:
-                print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is unreachable or not found - 404")
+                print_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is unreachable or not found - 404")
                 return False
             else:
-                print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is weird")
-                print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Status code: ", r.status_code)
+                print_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is weird")
+                print_and_save_to_file(f"{GREEN}[+]{RESET} Status code: ", r.status_code)
                 return False
         except requests.exceptions.ConnectionError:
-            print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is down")
+            print_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is down")
             return False
         except requests.exceptions.ReadTimeout:
-            print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is slow or timing out")
+            print_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is slow or timing out")
             sanity_check_retries += 1
             return sanity_check(host)
-    print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is down")
+    print_and_save_to_file(f"{GREEN}[+]{RESET} Sanity check: Host is down")
     sanity_check_retries = 0
     return False
 
@@ -125,7 +118,7 @@ def send_and_return_true_if_404(host, request):
 
 # Detect CL.TE vulnerabilities (no probs, directly 404 detection method)
 def detect_clte(host, user_agent):
-    print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Detection of CL.TE")
+    print_and_save_to_file(f"{GREEN}[+]{RESET} Detection of CL.TE")
     base_request = (
         f"{method} / HTTP/1.1\r\n"
         f"Host: {host}\r\n"
@@ -142,15 +135,15 @@ def detect_clte(host, user_agent):
     for te_header in TE_HEADERS_VARIATIONS:
         if not sanity_check(host):
             return
-        print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Testing CL.TE with header : {repr(te_header)}")
+        print_and_save_to_file(f"{GREEN}[+]{RESET} Testing CL.TE with header: {repr(te_header)}")
         request = base_request.replace("Transfer-Encoding: chunked\r\n", te_header)
         if send_and_return_true_if_404(host, request):
-            print_ntfy_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to this CL.TE attack payload :")
+            print_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to CL.TE attack with header {repr(te_header)}:")
             print_attack_with_n_r(request)
 
 # Detect TE.CL vulnerabilities (no probs, directly 404 detection method)
 def detect_tecl(host, user_agent):
-    print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Detection of TE.CL")
+    print_and_save_to_file(f"{GREEN}[+]{RESET} Detection of TE.CL")
     base_request = (
         f"{method} / HTTP/1.1\r\n"
         f"Host: {host}\r\n"
@@ -171,16 +164,16 @@ def detect_tecl(host, user_agent):
     for te_header in TE_HEADERS_VARIATIONS:
         if not sanity_check(host):
             return
-        print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Testing TE.CL with header : {repr(te_header)}")
+        print_and_save_to_file(f"{GREEN}[+]{RESET} Testing TE.CL with header: {repr(te_header)}")
         request = base_request.replace("Transfer-Encoding: chunked\r\n", te_header)
         if send_and_return_true_if_404(host, request):
-            print_ntfy_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to this TE.CL attack payload :")
+            print_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to TE.CL attack with header {repr(te_header)}:")
             print_attack_with_n_r(request)
    
 
 # Detect CL0 vulnerabilities
 def detect_cl0(host, user_agent, endpoint):
-    print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Detection of CL0")
+    print_and_save_to_file(f"{GREEN}[+]{RESET} Detection of CL0")
     base_request = (
         f"{method} /"+endpoint+" HTTP/1.1\r\n"
         f"Host: {host}\r\n"
@@ -194,15 +187,15 @@ def detect_cl0(host, user_agent, endpoint):
     for cl_header in CL_HEADERS_VARIATIONS:
         if not sanity_check(host):
             return
-        print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Testing CL0 with header : {repr(cl_header)}")
+        print_and_save_to_file(f"{GREEN}[+]{RESET} Testing CL0 with header: {repr(cl_header)}")
         request = base_request.replace("Content-Length: 30\r\n", cl_header)
         if send_and_return_true_if_404(host, request):
-            print_ntfy_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to this CL0 attack payload :")
+            print_and_save_to_file(f"{RED}[!]{RESET} Host {host} is vulnerable to CL0 attack with header {repr(cl_header)}:")
             print_attack_with_n_r(request)
 
 # Detect 0CL vulnerabilities
 def _0CL_detection(host, user_agent, endpoint):
-    print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Detection of 0CL")
+    print_and_save_to_file(f"{GREEN}[+]{RESET} Detection of 0CL")
     base_first_request = (
             f"{method} /"+endpoint+" HTTP/1.1\r\n"
             f"Host: {host}\r\n"
@@ -220,7 +213,7 @@ def _0CL_detection(host, user_agent, endpoint):
     for cl_header in CL_HEADERS_VARIATIONS:
         if not sanity_check(host):
             return
-        print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Testing 0CL with header : {repr(cl_header)}")
+        print_and_save_to_file(f"{GREEN}[+]{RESET} Testing 0CL with header: {repr(cl_header)}")
         first_request = base_first_request.replace("Content-Length: 20\r\n", cl_header)
         first_request = first_request.replace("30", "20")
         # print_attack_with_n_r(first_request)
@@ -245,7 +238,7 @@ def _0CL_detection(host, user_agent, endpoint):
         # Analyze response of second request : is it a 404 ?
         second_response = extract_response(second_response)
         if "404" in second_response[:13]:
-            print_ntfy_and_save_to_file(f"{RED}[!]{RESET} {host} is vulnerable to this 0CL payload :")
+            print_and_save_to_file(f"{RED}[!]{RESET} {host} is vulnerable to 0CL attack with header {repr(cl_header)}:")
             print_attack_with_n_r(first_request)
             print_attack_with_n_r(second_request)
 
@@ -301,7 +294,7 @@ def extract_response(response):
 # Print the attack payload with explicit \r\n for copy/paste in burpsuite or similar
 def print_attack_with_n_r(attack):
     sanity_check_retries = 0 
-    print_ntfy_and_save_to_file(f"{RED}[!]{RESET} Here is the request:","\n"+repr(attack).replace("\\n", "\\n\n").strip("'"))
+    print_and_save_to_file(f"{RED}[!]{RESET} Here is the request:","\n"+repr(attack).replace("\\n", "\\n\n").strip("'"))
 
 
 # time limit to avoid weird behavior on some hosts
@@ -329,39 +322,14 @@ def prepare_socket(host):
     wrapped_socket.settimeout(1)
     return wrapped_socket
 
-# Send a notification to ntfy via POST JSON with Basic Auth
-def ntfy_me(message: str, title: str, timeout: int = 5) -> bool:
-    """
-    Envoie une notification à ntfy via POST JSON avec Basic Auth.
-    Retourne True si succès, False sinon.
-    """
-    if not NTFY_USER or not NTFY_PASS:
-        # print("NTFY_USER / NTFY_PASS non définis dans .env — notification non envoyée.")
-        return False
-
-    try:
-        resp = requests.post(
-            NTFY_ENDPOINT,
-            json={"title": title, "message": message},
-            auth=HTTPBasicAuth(NTFY_USER, NTFY_PASS),
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to send notification: {e}")
-        return False
-
 # print, save to file and notify if needed
 # if verbose, print/save everything, else only print/save lines with [!] or [>]
-def print_ntfy_and_save_to_file(*args):
+def print_and_save_to_file(*args):
     date = time.strftime("%Y-%m-%d", time.localtime())
     if not os.path.exists("logs"):
         os.mkdir("logs")
     raw_text = ' '.join([remove_ansi(str(arg)) for arg in args])
     colored_text = ' '.join([str(arg) for arg in args])
-    if "[!]" in colored_text:
-        ntfy_me(colored_text, title="Vuln detected :")
     if verbose:
         print(colored_text)
         with open(f"logs/smuggler2000_{date}.log", "a") as f:
@@ -403,14 +371,14 @@ if __name__ == "__main__":
     user_agent = args.user_agent
     sanity_check_retries = 0
     if not args.clte and not args.tecl and not args._0CL and not args.CL0 and not args.all:
-        print_ntfy_and_save_to_file(f"{GREEN}[>]{RESET} You can use --all, --clte, --tecl, --CL0 and/or --_0CL to test for vulnerabilities")
+        print_and_save_to_file(f"{GREEN}[>]{RESET} Use --clte, --tecl, --CL0, or --_0CL to target specific vectors, or use --all for a full scan.")
         exit(1)
     if args.url:
         url = args.url
         host, endpoint = host_or_endpoint(url)
-        print_ntfy_and_save_to_file(f"\n{GREEN}[>]{RESET} Testing host: ", f"{BLUE}{host}{RESET}")
-        print_ntfy_and_save_to_file(f"{GREEN}[>]{RESET} Testing method: ", f"{BLUE}{method}{RESET}")
-        print_ntfy_and_save_to_file(f"{GREEN}[>]{RESET} Testing endpoint: {BLUE}/{endpoint}{RESET}")
+        print_and_save_to_file(f"\n{GREEN}[>]{RESET} Testing host: ", f"{BLUE}{host}{RESET}")
+        print_and_save_to_file(f"{GREEN}[>]{RESET} Testing method: ", f"{BLUE}{method}{RESET}")
+        print_and_save_to_file(f"{GREEN}[>]{RESET} Testing endpoint: {BLUE}/{endpoint}{RESET}")
         try:
             if not sanity_check(host):
                 exit(1)
@@ -427,19 +395,12 @@ if __name__ == "__main__":
                 detect_clte(host, user_agent)
                 detect_tecl(host, user_agent)
                 detect_cl0(host, user_agent, endpoint)
-                _0CL_detection(host, user_agent)
-
-            # if args.double_desync:
-            #     run_double_desync_probe(host, user_agent)
-            # if args._0CL:
-            #     _0CL_detection(host, user_agent)
-            #detect_advanced_HTTPRS(host, user_agent)
-            #CL0_variations(host, endpoint, user_agent)
+                _0CL_detection(host, user_agent, endpoint)
         except KeyboardInterrupt:
-            print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Exiting...")
+            print_and_save_to_file(f"{GREEN}[+]{RESET} Exiting...")
             exit(1)
         except Exception as e:
-            print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Error: ", e)
+            print_and_save_to_file(f"{GREEN}[+]{RESET} Error: ", e)
             exit(1)
     if args.list:
         with open(args.list) as f:
@@ -449,9 +410,9 @@ if __name__ == "__main__":
             try:
                 with time_limit(TIMEOUT_SECS):
                     host, endpoint = host_or_endpoint(host)
-                    print_ntfy_and_save_to_file(f"\n{GREEN}[>]{RESET} Testing host: ", f"{BLUE}{host}{RESET}")
-                    print_ntfy_and_save_to_file(f"{GREEN}[>]{RESET} Testing method: ", f"{BLUE}{method}{RESET}")
-                    print_ntfy_and_save_to_file(f"{GREEN}[>]{RESET} Testing endpoint: {BLUE}/{endpoint}{RESET}")
+                    print_and_save_to_file(f"\n{GREEN}[>]{RESET} Testing host: ", f"{BLUE}{host}{RESET}")
+                    print_and_save_to_file(f"{GREEN}[>]{RESET} Testing method: ", f"{BLUE}{method}{RESET}")
+                    print_and_save_to_file(f"{GREEN}[>]{RESET} Testing endpoint: {BLUE}/{endpoint}{RESET}")
                     if not sanity_check(host):
                         continue
                     trace(host, user_agent)
@@ -459,18 +420,23 @@ if __name__ == "__main__":
                         detect_clte(host, user_agent)
                     if args.tecl:
                         detect_tecl(host, user_agent)
-                    # if args._0CL:
-                        # _0CL_detection(host, user_agent)
-                    # detect_advanced_HTTPRS(host, user_agent)
-                    # CL0_variations(host, endpoint, user_agent)
+                    if args.CL0:
+                        detect_cl0(host, user_agent, endpoint)
+                    if args._0CL:
+                        _0CL_detection(host, user_agent, endpoint)
+                    if args.all:
+                        detect_clte(host, user_agent)
+                        detect_tecl(host, user_agent)
+                        detect_cl0(host, user_agent, endpoint)
+                        _0CL_detection(host, user_agent, endpoint)
             except TimeoutError:
-                print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Timeout: {host}")
+                print_and_save_to_file(f"{GREEN}[+]{RESET} Timeout: {host}")
                 continue
             except Exception as e:
-                print_ntfy_and_save_to_file(f"{GREEN}[+]{RESET} Error: ", e)
+                print_and_save_to_file(f"{GREEN}[+]{RESET} Error: ", e)
                 continue
     if not args.url and not args.list:
-        print_ntfy_and_save_to_file(f"{GREEN}[>]{RESET} Please provide a host or a list of hosts to test")
+        print_and_save_to_file(f"{GREEN}[>]{RESET} Please provide a host or a list of hosts to test")
         exit(1)
-    print_ntfy_and_save_to_file(f"\n{GREEN}[>]{RESET} Done\n")
+    print_and_save_to_file(f"\n{GREEN}[>]{RESET} Done\n")
 
